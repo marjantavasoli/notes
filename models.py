@@ -9,6 +9,11 @@ class User(SQLModel, table=True):
     hashed_password: str
     notes: list["Note"] = Relationship(back_populates="owner")
 
+class UserRead(SQLModel):
+    id: int
+    username: str
+    email: str | None = None
+
 
 class UserCreate(SQLModel):
     username: str
@@ -20,6 +25,11 @@ class UserUpdate(SQLModel):
     username: str | None = None
     email: str | None = None
 
+class NoteTag(SQLModel, table=True):
+    note_id: int = Field(foreign_key="note.id", primary_key=True)
+    tag_id: int = Field(foreign_key="tag.id", primary_key=True)
+
+
 
 class Note(SQLModel, table=True):
     id: int|None= Field(primary_key=True, default=None)
@@ -30,17 +40,33 @@ class Note(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
     owner_id: int = Field(foreign_key="user.id", index=True)
     owner: "User" = Relationship(back_populates="notes")
-    tags: list["Tag"] = Relationship(back_populates="notes", link_model="NoteTag")
+    tags: list["Tag"] = Relationship(back_populates="notes", link_model= NoteTag)
 
+
+class NoteCreate(SQLModel):
+    title: str
+    content: str|None = None
+    is_pinned: bool = Field(default=False)
+
+
+class NoteRead(SQLModel):
+    id: int|None = None
+    title: str
+    content: str | None = None
+    is_pinned: bool
+    created_at: datetime
+    updated_at: datetime
+    owner_id: int
+
+class NoteUpdate(NoteCreate):
+    title: str | None = None
+    is_pinned: bool = False
 
 
 class Tag(SQLModel, table=True):
     id: int|None = Field(primary_key=True, default=None)
     name: str = Field(unique=True, index=True)
-    notes: list["Note"] = Relationship(back_populates="tags", link_model="NoteTag")
+    notes: list["Note"] = Relationship(back_populates="tags", link_model= NoteTag)
 
 
 
-class NoteTag(SQLModel, table=True):
-    note_id: int = Field(foreign_key="note.id", primary_key=True)
-    tag_id: int = Field(foreign_key="tag.id", primary_key=True)
