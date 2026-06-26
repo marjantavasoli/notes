@@ -48,6 +48,19 @@ class NoteCreate(SQLModel):
     content: str|None = None
     is_pinned: bool = Field(default=False)
 
+class Tag(SQLModel, table=True):
+    id: int|None = Field(primary_key=True, default=None)
+    name: str = Field(unique=True, index=True)
+    notes: list["Note"] = Relationship(back_populates="tags", link_model= NoteTag)
+
+class TagCreate(SQLModel):
+    name: str
+
+
+class TagRead(SQLModel):
+    id : int
+    name: str
+
 
 class NoteRead(SQLModel):
     id: int|None = None
@@ -57,16 +70,15 @@ class NoteRead(SQLModel):
     created_at: datetime
     updated_at: datetime
     owner_id: int
+    tags : list[TagRead]|None=None
+
 
 class NoteUpdate(NoteCreate):
     title: str | None = None
     is_pinned: bool = False
 
 
-class Tag(SQLModel, table=True):
-    id: int|None = Field(primary_key=True, default=None)
-    name: str = Field(unique=True, index=True)
-    notes: list["Note"] = Relationship(back_populates="tags", link_model= NoteTag)
+
 
 
 

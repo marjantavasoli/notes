@@ -3,9 +3,11 @@ from datetime import datetime, timezone
 from fastapi import FastAPI,Depends,HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio.session import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from database import lifespan
-from models import UserCreate, User,UserUpdate,UserRead,NoteCreate,Note,NoteRead,NoteUpdate
+from models import UserCreate, User, UserUpdate, UserRead, NoteCreate, Note, NoteRead, NoteUpdate, Tag, TagCreate, \
+    TagRead, NoteTag
 from sqlmodel import select
 from database import get_session
 from auth import verify_password,hash_password,create_access_token,get_current_user
@@ -53,18 +55,20 @@ async def create_note(note_data:NoteCreate,current_user:User=Depends(get_current
 
 @app.get("/notes",response_model=list[NoteRead])
 async def get_notes(current_user:User=Depends(get_current_user),session:AsyncSession=Depends(get_session)):
-    result = await session.exec(select(Note).where(Note.owner_id == current_user.id))
+    result = await session.exec(select(Note).where(Note.owner_id == current_user.id).options(selectinload(Note.tags)))
     notes = result.all()
     return notes
 
 
 @app.get("/notes/{note_id}",response_model=NoteRead)
 async def get_note(note_id:int,session:AsyncSession=Depends(get_session),current_user:User=Depends(get_current_user)):
-    note_db = await session.get(Note,note_id)
-    if note_db is None:
+    result = await session.exec(select (Note).where(Note.id==note_id).options(selectinload(Note.tags)))
+    note = result.first()
+    if note is None:
         raise HTTPException(status_code=404, detail="Note not found")
-    if note_db.owner_id != current_user.id:
+    if note.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="You cannot get this")
+    return note
 
 
 @app.patch("/notes/{note_id}",response_model=NoteRead)
@@ -91,5 +95,54 @@ async def delete_note(note_id:int,session:AsyncSession=Depends(get_session),curr
     await session.delete(note_db)
     await session.commit()
     return {"message": f"{note_db.title} has been deleted"}
+
+
+@app.post("/notes/{note_id}/tags")
+async def add_tag_to_note(note_id:int,tag_data:TagCreate,session:AsyncSession=Depends(get_session),current_user:User=Depends(get_current_user)):
+    result = await session.exec(
+        select(Note)
+        .where(Note.id == note_id)
+        .options(selectinload(Note.tags))
+    )
+    note = result.first()
+    if note is None:
+        raise HTTPException(status_code=404, detail="Note not found")
+    if note.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You cannot add tag to this note")
+    result = await session.exec(select(Tag).where(Tag.name == tag_data.name))
+    tag = result.first()
+    if tag is None:
+        tag = Tag(name=tag_data.name)
+        session.add(tag)
+
+    elif tag in note.tags:
+        return note
+
+    note.tags.append(tag)
+    session.add(note)
+    await session.commit()
+    await session.refresh(note,attribute_names= ['tags'])
+    return note
+
+
+@app.delete("/notes/{note_id}/tags/{tag_name}",response_model=NoteRead)
+async def delete_tag_from_note(note_id:int,tag_name:str,session:AsyncSession=Depends(get_session),current_user:User=Depends(get_current_user)):
+    result = await session.exec(select(Note).where(Note.id == note_id).options(selectinload(Note.tags)))
+    note = result.first()
+    if note is None:
+        raise HTTPException(status_code=404, detail="Note not found")
+    if note.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You cannot delete tag from this note")
+    tag_to_remove = next((t for t in note.tags if t.name==tag_name), None)
+    if tag_to_remove is None:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    note.tags.remove(tag_to_remove)
+    session.add(note)
+    await session.commit()
+    await session.refresh(note,attribute_names=['tags'])
+    return note
+
+
+
 
 
