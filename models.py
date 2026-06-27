@@ -78,7 +78,11 @@ class NoteUpdate(NoteCreate):
     is_pinned: bool = False
 
 
-
+class PaginatedNotes(SQLModel):
+    items: list[NoteRead]
+    total: int
+    limit: int
+    offset: int
 
 
 

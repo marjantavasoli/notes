@@ -1,13 +1,14 @@
 from datetime import datetime, timezone
 
-from fastapi import FastAPI,Depends,HTTPException
+from fastapi import FastAPI,Depends,HTTPException,Query
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio.session import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql.functions import func
 
 from database import lifespan
 from models import UserCreate, User, UserUpdate, UserRead, NoteCreate, Note, NoteRead, NoteUpdate, Tag, TagCreate, \
-    TagRead, NoteTag
+    TagRead, NoteTag,PaginatedNotes
 from sqlmodel import select
 from database import get_session
 from auth import verify_password,hash_password,create_access_token,get_current_user
@@ -50,14 +51,28 @@ async def create_note(note_data:NoteCreate,current_user:User=Depends(get_current
     note = Note(**note_data.model_dump(),owner_id=current_user.id)
     session.add(note)
     await session.commit()
-    await session.refresh(note)
+    await session.refresh(note,attribute_names=["tags"])
     return note
 
-@app.get("/notes",response_model=list[NoteRead])
-async def get_notes(current_user:User=Depends(get_current_user),session:AsyncSession=Depends(get_session)):
-    result = await session.exec(select(Note).where(Note.owner_id == current_user.id).options(selectinload(Note.tags)))
-    notes = result.all()
-    return notes
+@app.get("/notes",response_model=PaginatedNotes)
+async def get_notes(pinned:bool|None=None,tag:str|None=None,
+    search:str|None=None,offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=10, ge=1, le=100),session:AsyncSession=Depends(get_session),
+    current_user:User=Depends(get_current_user)):
+    conditions = [Note.owner_id == current_user.id]
+    if pinned is not None:
+        conditions.append(Note.is_pinned == pinned)
+    if search is not None:
+        conditions.append(Note.title.contains(search)|Note.content.contains(search))
+    if tag is not None:
+        conditions.append(Note.tags.any(Tag.name==tag))
+    statement = select(Note).where(*conditions).options(selectinload(Note.tags)).order_by(Note.created_at.desc()).limit(limit).offset(offset)
+    count_statement = select(func.count()).select_from(Note).where(*conditions)
+    items_result = await session.exec(statement)
+    items = items_result.all()
+    count_result = await session.exec(count_statement)
+    total = count_result.one()
+    return PaginatedNotes(items=items,total=total,limit=limit,offset=offset)
 
 
 @app.get("/notes/{note_id}",response_model=NoteRead)
@@ -73,7 +88,7 @@ async def get_note(note_id:int,session:AsyncSession=Depends(get_session),current
 
 @app.patch("/notes/{note_id}",response_model=NoteRead)
 async def update_note(note_id:int,note:NoteUpdate,session:AsyncSession=Depends(get_session),current_user:User=Depends(get_current_user)):
-    note_db =  await session.get(Note, note_id)
+    note_db =  await session.get(Note, note_id,options=[selectinload(Note.tags)])
     if note_db is None:
         raise HTTPException(status_code=404, detail="Note not found")
     if note_db.owner_id != current_user.id:
@@ -83,7 +98,8 @@ async def update_note(note_id:int,note:NoteUpdate,session:AsyncSession=Depends(g
     note_db.updated_at = datetime.now(tz=timezone.utc)
     session.add(note_db)
     await session.commit()
-    await session.refresh(note_db)
+    await session.refresh(note_db,attribute_names=["tags"])
+    return note_db
     return note_db
 @app.delete("/notes/{note_id}")
 async def delete_note(note_id:int,session:AsyncSession=Depends(get_session),current_user:User=Depends(get_current_user)):
