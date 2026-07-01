@@ -75,6 +75,7 @@ async def get_notes(pinned:bool|None=None,tag:str|None=None,
     return PaginatedNotes(items=items,total=total,limit=limit,offset=offset)
 
 
+
 @app.get("/notes/{note_id}",response_model=NoteRead)
 async def get_note(note_id:int,session:AsyncSession=Depends(get_session),current_user:User=Depends(get_current_user)):
     result = await session.exec(select (Note).where(Note.id==note_id).options(selectinload(Note.tags)))
@@ -100,7 +101,7 @@ async def update_note(note_id:int,note:NoteUpdate,session:AsyncSession=Depends(g
     await session.commit()
     await session.refresh(note_db,attribute_names=["tags"])
     return note_db
-    return note_db
+
 @app.delete("/notes/{note_id}")
 async def delete_note(note_id:int,session:AsyncSession=Depends(get_session),current_user:User=Depends(get_current_user)):
     note_db = await session.get(Note, note_id)

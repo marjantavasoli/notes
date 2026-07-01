@@ -10,10 +10,8 @@ async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncS
 
 
 async def create_tables():
-    print("=== create_tables CALLED ===")
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-    print(f"=== Tables in metadata: {list(SQLModel.metadata.tables.keys())} ===")
 
 
 
